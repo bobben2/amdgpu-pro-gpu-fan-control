@@ -1,0 +1,70 @@
+#!/bin/bash
+# Set gpu core freq 
+# This assumes amdgpu-pro driver. Will not work with fglrx.
+# Input: gpu id (index) and new core freq in MHz.
+# Example usage:  Set gpu core freq to 1000MHz on device 0
+#    gpu_freq_set 0 1000
+# by bobben2
+#
+# Defaults:
+gpu=0
+idx=1
+cspeed=0       # if 0 then core freq is not set
+mspeed=1500
+currfreq=0
+newfreq=0
+mindiff=1000
+bestindex=7
+if [ "$1" != "" ]; then
+	gpu=$1
+	idx=$((gpu+1))
+	if [ "$2" != "" ]; then 
+		cspeed=$2
+	fi
+	mspeed=$3
+else
+	prog=`basename $0`
+	echo Usage 1: $prog gpuindex newcorefreq will set new freq for gpu at idx
+	echo Usage 2: $prog gpuindex will return current gpu core freq
+	exit 0
+fi
+export devpath=/sys/class/drm/card$gpu/device
+
+if [ -d $devpath ]; then
+#	ls -l $devpath/pp_*
+	if [ -f $devpath/pp_dpm_sclk ]; then
+		while read line
+		do
+			set `echo -e "$line"`
+			echo $1 $2 $3
+			ind=$1
+			ind=${ind/%:/}      # Remove :
+			freq=$2
+			freq=${freq/%Mhz/}  # Remove trailing Mhz
+			freq=${freq/%MHz/}
+#echo Freq: $freq
+			diff=$((cspeed - freq))
+			diff=${diff/#-/}    # Absolute value
+			if [ $diff -lt $mindiff ]; then
+				mindiff=$diff
+				bestindex=$ind
+				newfreq=$freq
+			fi
+			if [ "$3" != "" ]; then
+				currfreq=$freq
+			fi 
+		done < $devpath/pp_dpm_sclk
+
+	#	echo Nearest fit: $bestindex 
+		echo Current freq $currfreq MHz. cspeed: $cspeed
+		if [ "$cspeed" -ne "0" ]; then
+			echo "Setting new core freq -> $newfreq MHz" 
+			sudo bash -c "echo manual > $devpath/power_dpm_force_performance_level"
+			sudo bash -c "echo $bestindex > $devpath/pp_dpm_sclk"
+		fi
+	fi
+else
+	echo Could not change core/mem freq for gpu $gpu.
+	echo "($devpath not found)"
+fi
+
