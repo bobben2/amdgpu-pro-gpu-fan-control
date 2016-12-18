@@ -1,0 +1,40 @@
+#!/bin/bash
+# Set fan speed for given gpu [0..n]
+# Assumes amdgpu-pro driver is installed. Will not work with fglrx.
+# Input: gpu id (index) and new fan percent.
+#
+gpu=0
+percent=1
+if [ "$1" != "" ]; then
+	gpu=$1
+	if [ "$2" != "" ]; then
+		percent=$2
+	fi
+fi
+set `ls /sys/class/drm/card$gpu/device/hwmon` > /dev/null
+export fanpath=/sys/class/drm/card$gpu/device/hwmon/$1
+
+if [ -d $fanpath ]; then
+#	ls -l $fanpath
+	if [ -f $fanpath/pwm1 ] && [ -f $fanpath/pwm1_max ]; then
+		max=`cat $fanpath/pwm1_max`
+		min=`cat $fanpath/pwm1_min`
+        	range=$((max - min))
+		index=$((percent * range + 99))     # Add 100-1 for ceil
+        	index=$((index / 100)) 
+#		echo "Range: " $range $percent $index
+		tempt=`cat $fanpath/temp1_input`
+		tempt=$((tempt / 1000))
+		curr=`cat $fanpath/pwm1`
+		curr=$((curr * 100 / range))
+		echo "GPU temp: $tempt C, Curr fan percent $curr"
+		if [ $percent != 1 ]; then
+   			echo "Setting fan percent -> $percent"
+			sudo bash -c "echo $index > $fanpath/pwm1"
+		fi
+	fi
+else
+	echo Could not change fan speed for gpu $gpu.
+	echo "($fanpath not found)"
+fi
+
